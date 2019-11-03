@@ -171,6 +171,7 @@ class KnowledgeEmbedding(nn.Module):
         return loss
 
     def neg_loss(self, entity_head, relation, entity_tail, entity_head_idxs, entity_tail_idxs):
+
         # Entity tail indices can be -1. Remove these indices. Batch size may be changed!
         #print("entity_head_idxs",entity_head_idxs.size(),"entity_tail_idxs",entity_tail_idxs.size())
         entity_head_idxs=Variable(entity_head_idxs)
@@ -193,6 +194,11 @@ class KnowledgeEmbedding(nn.Module):
 
 def kg_neg_loss_conv2d(model,entity_head_embed, entity_tail_embed, entity_head_idxs, entity_tail_idxs,
                 relation_vec, num_samples, distrib):
+    # conv2d method using 2d convolution operation to replace the plus operation between
+    # the head vector and relation vector while not changing loss function in transe(distance
+    # of both positive and negative data pair)
+
+
     batch_size = entity_head_idxs.size(0)
     entity_head_vec = entity_head_embed(entity_head_idxs)  # [batch_size, embed_size]
     entity_tail_vec = entity_tail_embed(entity_tail_idxs)  # [batch_size, embed_size]
