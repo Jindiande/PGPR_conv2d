@@ -13,6 +13,8 @@ import torch.nn as nn
 
 from data_utils import *
 from transe_model import KnowledgeEmbedding,ConvE
+using_method_transE=False
+using_method='tranE' if using_method_transE else 'conv_2d'
 
 
 
@@ -91,39 +93,44 @@ def test(args, topk=10):
     product_embed = embeddings['product_embed'][:-1]# [N2 b]
     print('user embed:', user_embed.shape, 'purchase_embed',purchase_embed.shape,'product embed:', product_embed.shape)
 
-    # calculate user + product embeddings
+    scores_matrix=[]
+    if(using_method=='conv_2d'):
+        state_dict = torch.load(args.model_file)
+        conv2d_model = ConvE(args)
+        print('state_dict', state_dict.keys())
+        print('conv2d_model', conv2d_model.state_dict().keys())
+        for name, param in conv2d_model.state_dict().items():
+            pretrain_data = state_dict['conv2d_model.' + name].data
+            conv2d_model.state_dict()[name].copy_(pretrain_data)
 
-    """
-    state_dict = torch.load(args.model_file)
-    conv2d_model=ConvE(args)
-    print('state_dict',state_dict.keys())
-    print('conv2d_model',conv2d_model.state_dict().keys())
-    for  name, param in conv2d_model.state_dict().items():
-        pretrain_data = state_dict['conv2d_model.'+name].data
-        conv2d_model.state_dict()[name].copy_(pretrain_data)
+        print('load over')
 
-    print('load over')
-    
-    #test conv2d model
-    user_embed=torch.from_numpy(user_embed)
-    purchase_embed=torch.from_numpy(purchase_embed)#[N1 b]
-    product_embed=torch.from_numpy(product_embed)#[N2 b]
-    purchase_embed=purchase_embed.repeat(user_embed.size(0),1)
-    conv2d_model.eval()
-    _,calulated_product_emb=conv2d_model(user_embed,purchase_embed,product_embed)#[N1 b]
-    multi_matrix=torch.mm(calulated_product_emb,product_embed.transpose(1,0))#[N1 N2]
-    calulated_product_emb_sum_sq=torch.mul(calulated_product_emb,calulated_product_emb).sum(dim=1).view(calulated_product_emb.size(0),1).repeat(1,product_embed.size(0))#[N1 N2]
-    product_embed_sum_sq=torch.mul(product_embed,product_embed).sum(dim=1).view(product_embed.size(0),1).repeat(1,calulated_product_emb.size(0))#[N2 N1]
-    print(multi_matrix.shape,calulated_product_emb_sum_sq.shape,product_embed_sum_sq.shape)
-    scores_matrix=calulated_product_emb_sum_sq+product_embed_sum_sq.transpose(1,0)-2*multi_matrix
-    scores_matrix=-1*scores_matrix.detach().numpy()
+        # test conv2d model
+        user_embed = torch.from_numpy(user_embed)
+        purchase_embed = torch.from_numpy(purchase_embed)  # [N1 b]
+        product_embed = torch.from_numpy(product_embed)  # [N2 b]
+        purchase_embed = purchase_embed.repeat(user_embed.size(0), 1)
+        conv2d_model.eval()
+        _, calulated_product_emb = conv2d_model(user_embed, purchase_embed, product_embed)  # [N1 b]
+        multi_matrix = torch.mm(calulated_product_emb, product_embed.transpose(1, 0))  # [N1 N2]
+        calulated_product_emb_sum_sq = torch.mul(calulated_product_emb, calulated_product_emb).sum(dim=1).view(
+            calulated_product_emb.size(0), 1).repeat(1, product_embed.size(0))  # [N1 N2]
+        product_embed_sum_sq = torch.mul(product_embed, product_embed).sum(dim=1).view(product_embed.size(0), 1).repeat(
+            1, calulated_product_emb.size(0))  # [N2 N1]
+        print(multi_matrix.shape, calulated_product_emb_sum_sq.shape, product_embed_sum_sq.shape)
+        scores_matrix = calulated_product_emb_sum_sq + product_embed_sum_sq.transpose(1, 0) - 2 * multi_matrix
+        scores_matrix = -1 * scores_matrix.detach().numpy()
+    else:
+        # transE
+        calulated_product_emb = user_embed + purchase_embed
+        scores_matrix = np.dot(calulated_product_emb, product_embed.T)
 
-    # normalize embeddings(TBD)
-    # calulated_product_emb = calulated_product_emb/LA.norm(calulated_product_emb, axis=1, keepdims=True)
-    # calculate Nearest Neighbors
-    """
-    calulated_product_emb = user_embed + purchase_embed  # transE
-    scores_matrix = np.dot(calulated_product_emb, product_embed.T)
+
+
+
+
+
+
 
     print('scores_matrix.shape',scores_matrix.shape)
     #print('Max score:', np.max(scores_matrix),torch.max(calulated_product_emb),torch.max(user_embed),torch.max(product_embed),torch.max(purchase_embed))
