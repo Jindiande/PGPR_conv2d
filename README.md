@@ -21,6 +21,8 @@ python preprocess.py --dataset <dataset_name>
 2. Train knowledge graph embeddings (Conv2d in this case):
 ```bash
 python train_transe_model.py --dataset <dataset_name> --checkpoint_address <checkpoint location>
+replace the transe method in original paper with conv2d method in transe_model.py and relatively test_embedding.py
+
 ```
 
 3. Train RL agent:
