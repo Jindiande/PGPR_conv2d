@@ -23,7 +23,8 @@ python preprocess.py --dataset <dataset_name>
 python train_transe_model.py --dataset <dataset_name> --checkpoint_address <checkpoint location>
 
 ```
-replace the transe method in original paper with conv2d method in transe_model.py and relatively test_embedding.py
+    replace the transe method in original paper with conv2d method in transe_model.py and relatively test_embedding.py
+    sinc
 
 3. Train RL agent:
 ```bash
