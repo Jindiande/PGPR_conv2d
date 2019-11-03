@@ -1,5 +1,6 @@
 # Reinforcement Knowledge Graph Reasoning for Explainable Recommendation
-This repository contains the source code of the SIGIR 2019 paper "[Reinforcement Knowledge Graph Reasoning for Explainable Recommendation](https://arxiv.org/abs/1906.05237)" [2].
+This reposit is a implement based on paper [https://arxiv.org/abs/1707.01476](Convolutional 2D Knowledge Graph Embeddings) and [https://arxiv.org/abs/1906.05237](
+Reinforcement Knowledge Graph Reasoning for Explainable Recommendation) 
 
 ## Datasets
 Two Amazon datasets (Amazon_Beauty, Amazon_Cellphones) are available in the "data/" directory and the split is consistent with [1].
@@ -17,9 +18,9 @@ python preprocess.py --dataset <dataset_name>
 ```
 "<dataset_name>" should be one of "cd", "beauty", "cloth", "cell" (refer to utils.py).
 
-2. Train knowledge graph embeddings (TransE in this case):
+2. Train knowledge graph embeddings (Conv2d in this case):
 ```bash
-python train_transe_model.py --dataset <dataset_name>
+python train_transe_model.py --dataset <dataset_name> --checkpoint_address <checkpoint location>
 ```
 
 3. Train RL agent:
