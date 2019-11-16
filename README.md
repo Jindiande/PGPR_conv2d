@@ -1,6 +1,7 @@
 # Reinforcement Knowledge Graph Reasoning for Explainable Recommendation
 This reposit is a implement based on paper [Convolutional 2D Knowledge Graph Embeddings]( https://arxiv.org/abs/1707.01476) and [Reinforcement Knowledge Graph Reasoning for Explainable Recommendation](
-https://arxiv.org/abs/1906.05237) 
+https://arxiv.org/abs/1906.05237) My work is to replace the transE method used in [Reinforcement Knowledge Graph Reasoning for Explainable Recommendation](
+https://arxiv.org/abs/1906.05237) with Conv2d method proposed in [Convolutional 2D Knowledge Graph Embeddings]( https://arxiv.org/abs/1707.01476) 
 
 ## Datasets
 Two Amazon datasets (Amazon_Beauty, Amazon_Cellphones) are available in the "data/" directory and the split is consistent with [1].
