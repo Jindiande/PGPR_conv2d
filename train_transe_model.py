@@ -28,29 +28,37 @@ def train(args):
     dataset = load_dataset(args.dataset)
     dataloader = AmazonDataLoader(dataset, args.batch_size)
     words_to_train = args.epochs * dataset.review.word_count + 1
-
+    epoch_start=0
     model = KnowledgeEmbedding(dataset, args).to(args.device)
     if isfile(args.checkpoint_address):
         checkpoint = torch.load(args.checkpoint_address)
+        #model.load_state_dict(checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
         epoch_start = checkpoint['epoch']
-
+    else:
+        epoch_start=0
 
     logger.info('Parameters:' + str([i[0] for i in model.named_parameters()]))
-    optimizer = optim.SGD(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
     steps = 0
     smooth_loss = 0.0
+
     model.train()
-    for epoch in range(epoch_start+1, args.epochs + epoch_start+1):
+    for epoch in range(epoch_start, args.epochs + epoch_start):
         dataloader.reset()
         while dataloader.has_next():
+
+            #print("training start")
             # Set learning rate.
-            lr = args.lr * max(1e-4, 1.0 - dataloader.finished_word_num / float(words_to_train))
+            lr = args.lr * max(1e-2, (1.0 - dataloader.finished_word_num / float(words_to_train)))
             for pg in optimizer.param_groups:
                 pg['lr'] = lr
 
             # Get training batch.
             batch_idxs = dataloader.get_batch()
+            if(dataloader.finished_word_num<29419952):
+                steps+=1
+                continue
             #batch_idxs=np.array(list(batch_idxs))
             batch_idxs = torch.from_numpy(batch_idxs).to(args.device)
             #print(batch_idxs.size())
@@ -67,14 +75,17 @@ def train(args):
                 logger.info('Epoch: {:02d} | '.format(epoch) +
                             'Words: {:d}/{:d} | '.format(dataloader.finished_word_num, words_to_train) +
                             'Lr: {:.5f} | '.format(lr) +
-                            'Smooth loss: {:.5f}'.format(smooth_loss))
-                smooth_loss = 0.0
-            if(steps%5000==0):
-                torch.save({'epoch': epoch+2,
-                            'state_dict': model.state_dict()},
-                           '{}/transe_model_sd_epoch_{}_{}.ckpt'.format(args.log_dir, epoch,steps/5000))
+                            'Smooth loss: {:.5f}'.format(smooth_loss)
 
-        torch.save({'epoch': epoch + 2,
+                            )
+                smooth_loss = 0.0
+
+            if(steps%3000==0):
+                torch.save({'epoch': epoch,
+                            'state_dict': model.state_dict()},
+                           '{}/transe_model_sd_epoch_{}_{}.ckpt'.format(args.log_dir, epoch,steps/3000))
+
+        torch.save({'epoch': epoch,
                     'state_dict': model.state_dict()},
                    '{}/transe_model_sd_epoch_{}.ckpt'.format(args.log_dir, epoch ))
 
@@ -136,7 +147,7 @@ def main():
     parser.add_argument('--gpu', type=str, default='1', help='gpu device.')
     parser.add_argument('--epochs', type=int, default=30, help='number of epochs to train.')
     parser.add_argument('--batch_size', type=int, default=128, help='batch size.')
-    parser.add_argument('--lr', type=float, default=0.5, help='learning rate.')
+    parser.add_argument('--lr', type=float, default=0.003, help='learning rate.')
     parser.add_argument('--weight_decay', type=float, default=0, help='weight decay for adam.')
     parser.add_argument('--l2_lambda', type=float, default=0, help='l2 lambda')
     parser.add_argument('--max_grad_norm', type=float, default=5.0, help='Clipping gradient.')
@@ -144,6 +155,7 @@ def main():
     parser.add_argument('--num_neg_samples', type=int, default=5, help='number of negative samples.')
     parser.add_argument('--steps_per_checkpoint', type=int, default=200, help='Number of steps for checkpoint.')
     parser.add_argument('--checkpoint_address', type=str, default=200, help='Number of steps for checkpoint.')
+    parser.add_argument('--label-smoothing', type=float, default=0.1, help='Label smoothing value to use. Default: 0.1')
 
     args = parser.parse_args()
 

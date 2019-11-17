@@ -5,7 +5,8 @@ import numpy as np
 import pickle
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
+from torch.nn import functional as F, Parameter
 from torch.autograd import Variable
 from utils import *
 from data_utils import AmazonDataset
@@ -105,6 +106,8 @@ class KnowledgeEmbedding(nn.Module):
         batch_idxs: batch_size * 8 array, where each row is
                 (u_id, p_id, w_id, b_id, c_id, rp_id, rp_id, rp_id).
         """
+        loss_possi=0
+        loss_neg=0
         user_idxs = batch_idxs[:, 0]
         product_idxs = batch_idxs[:, 1]
         word_idxs = batch_idxs[:, 2]
@@ -161,13 +164,6 @@ class KnowledgeEmbedding(nn.Module):
             regularizations.extend(pr3_embeds)
             loss += pr3_loss
 
-        # l2 regularization
-        if self.l2_lambda > 0:
-            l2_loss = 0.0
-            for term in regularizations:
-                l2_loss += torch.norm(term)
-            loss += self.l2_lambda * l2_loss
-
         return loss
 
     def neg_loss(self, entity_head, relation, entity_tail, entity_head_idxs, entity_tail_idxs):
@@ -178,7 +174,7 @@ class KnowledgeEmbedding(nn.Module):
         entity_tail_idxs = Variable(entity_tail_idxs)
         mask = entity_tail_idxs >= 0
         fixed_entity_head_idxs = entity_head_idxs[mask]#[B 1]
-        fixed_entity_tail_idxs = entity_tail_idxs[mask]
+        fixed_entity_tail_idxs = entity_tail_idxs[mask]#[B 1]
         if fixed_entity_head_idxs.size(0) <= 0:
             return None, []
 
@@ -188,9 +184,11 @@ class KnowledgeEmbedding(nn.Module):
         relation_bias_embedding = getattr(self, relation + '_bias')  # nn.Embedding [vocab_size + 1, 1]
         entity_tail_distrib = self.relations[relation].et_distrib  # [vocab_size]
 
-        return kg_neg_loss_conv2d(self.conv2d_model,entity_head_embedding, entity_tail_embedding,
+        res=kg_neg_loss_conv2d(self.conv2d_model,entity_head_embedding, entity_tail_embedding,
                            fixed_entity_head_idxs, fixed_entity_tail_idxs,
                            relation_vec, self.num_neg_samples,entity_tail_distrib)
+
+        return res
 
 def kg_neg_loss_conv2d(model,entity_head_embed, entity_tail_embed, entity_head_idxs, entity_tail_idxs,
                 relation_vec, num_samples, distrib):
@@ -202,24 +200,25 @@ def kg_neg_loss_conv2d(model,entity_head_embed, entity_tail_embed, entity_head_i
     batch_size = entity_head_idxs.size(0)
     entity_head_vec = entity_head_embed(entity_head_idxs)  # [batch_size, embed_size]
     entity_tail_vec = entity_tail_embed(entity_tail_idxs)  # [batch_size, embed_size]
-
+    entity_tail_idxs=entity_tail_idxs.reshape(-1,1)
     relation_vec=relation_vec.repeat(batch_size,1)# [batch_size, embed_size]
 
     neg_sample_idx = torch.multinomial(distrib, num_samples, replacement=True).view(-1)
     neg_vec = entity_tail_embed(neg_sample_idx)  # [num_samples, embed_size]
     if(entity_head_vec.size(0)==1):
-        loss_positive,_ = model(entity_head_vec[0,:].repeat(2,1), relation_vec[0,:].repeat(2,1), entity_tail_vec[0,:].repeat(2,1))
+        loss_positive,_ = model(entity_head_vec[0,:].repeat(2,1), relation_vec[0,:].repeat(2,1), entity_tail_embed,entity_tail_idxs[0,0].repeat(2,1))
     else:
-        loss_positive,_=model(entity_head_vec,relation_vec,entity_tail_vec)
-
+        loss_positive,_=model(entity_head_vec,relation_vec,entity_tail_embed,entity_tail_idxs)
+    """
     mindim=min(num_samples,entity_head_vec.size(0))
     if(mindim==1):
         loss_nege,_ = model(entity_head_vec[0:mindim, :].repeat(2,1), relation_vec[0:mindim, :].repeat(2,1), neg_vec[0:mindim, :].repeat(2,1))
     else:
         loss_nege,_=model(entity_head_vec[0:mindim,:],relation_vec[0:mindim,:],neg_vec[0:mindim,:])
-    loss=loss_positive-0.1*loss_nege
-
-    #loss=loss_positive
+    loss=loss_positive-0.01*loss_nege
+    """
+    #print(loss_positive,loss_nege)
+    loss=loss_positive
     return loss,[entity_head_vec, entity_tail_vec, neg_vec]
 def kg_neg_loss(entity_head_embed, entity_tail_embed, entity_head_idxs, entity_tail_idxs,
                 relation_vec, relation_bias_embed, num_samples, distrib):
@@ -265,7 +264,8 @@ class ConvE(torch.nn.Module):
         self.inp_drop = torch.nn.Dropout(0.2)
         self.hidden_drop = torch.nn.Dropout(0.3)
         self.feature_map_drop = torch.nn.Dropout2d(0.2)
-        self.loss = torch.nn.MSELoss(reduction='mean')
+        self.loss =  nn.NLLLoss(reduction='mean')
+        self.softmax=nn.LogSoftmax(dim=1)
         self.emb_dim1 = 10
         self.emb_dim2 = 100 // self.emb_dim1
 
@@ -273,12 +273,12 @@ class ConvE(torch.nn.Module):
         self.bn0 = torch.nn.BatchNorm2d(1)
         self.bn1 = torch.nn.BatchNorm2d(32)
         self.bn2 = torch.nn.BatchNorm1d(args.embed_size)
-        #self.register_parameter('b', Parameter(torch.zeros(num_entities)))
         self.fc = torch.nn.Linear(32*18*8,args.embed_size)
 
 
 
-    def forward(self, e1, rel,e2):
+    def forward(self, e1, rel,entity_tail_embed,e2=None):#e2 [batch_size,1]
+        score_matrix=0
         e1= e1.view(-1, 1, self.emb_dim1, self.emb_dim2)#[batch_size,1, emb_dim1,emb_dim2]
         rel = rel.view(-1, 1, self.emb_dim1, self.emb_dim2)#[batch_size,1, emb_dim1,emb_dim2]
 
@@ -296,11 +296,23 @@ class ConvE(torch.nn.Module):
         x = self.bn2(x)#[B 100]
         x = F.relu(x)#[B 100]
         if self.training:
-           loss=self.loss(x,e2)
+            score_matrix = torch.mm(x, entity_tail_embed.weight.transpose(1,0))#[B num_entities_tail]
+            score_matrix = self.softmax(score_matrix)  # [B num_entities_tail]
+        else:
+            score_matrix = torch.mm(x, entity_tail_embed.transpose(1, 0))  # [B num_entities_tail]
+            score_matrix = torch.sigmoid(score_matrix)  # [B num_entities_tail]
+        #self.register_parameter('b', Parameter(torch.zeros(x.size(1))))
+        #score_matrix += self.b.expand_as(x)#[B num_entities_tail]
+
+
+        if self.training:
+          loss=self.loss(score_matrix,e2.reshape(e2.size(0)))
+          #loss = self.loss(score_matrix, one_hot)
         else:
             loss=0
+
         #x = torch.mm(x, self.emb_e.weight.transpose(1,0))#[b num_entities]
         #x += self.b.expand_as(x)#[]
         #pred = torch.sigmoid(x)
 
-        return loss,x
+        return loss,score_matrix

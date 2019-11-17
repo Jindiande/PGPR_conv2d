@@ -10,6 +10,7 @@ from easydict import EasyDict as edict
 from math import log
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from data_utils import *
 from transe_model import KnowledgeEmbedding,ConvE
@@ -20,6 +21,7 @@ using_method='tranE' if using_method_transE else 'conv_2d'
 
 def load_embedding(args):
     state_dict = torch.load(args.model_file,map_location='cuda:0')
+    state_dict=state_dict['state_dict']
     user_embed = state_dict['user.weight'].cpu()
     product_embed = state_dict['product.weight'].cpu()
     purchase_embed = state_dict['purchase'].cpu()
@@ -95,7 +97,8 @@ def test(args, topk=10):
 
     scores_matrix=[]
     if(using_method=='conv_2d'):
-        state_dict = torch.load(args.model_file)
+        state_dict = torch.load(args.model_file, map_location='cuda:0')
+        state_dict = state_dict['state_dict']
         conv2d_model = ConvE(args)
         print('state_dict', state_dict.keys())
         print('conv2d_model', conv2d_model.state_dict().keys())
@@ -111,8 +114,10 @@ def test(args, topk=10):
         product_embed = torch.from_numpy(product_embed)  # [N2 b]
         purchase_embed = purchase_embed.repeat(user_embed.size(0), 1)
         conv2d_model.eval()
-        _, calulated_product_emb = conv2d_model(user_embed, purchase_embed, product_embed)  # [N1 b]
-        multi_matrix = torch.mm(calulated_product_emb, product_embed.transpose(1, 0))  # [N1 N2]
+        _, scores_matrix = conv2d_model(user_embed, purchase_embed, product_embed,e2=None)  # [N1 b]
+       # multi_matrix = torch.mm(calulated_product_emb, product_embed.transpose(1, 0).contiguous())  # [N1 N2]
+        scores_matrix=scores_matrix.detach().numpy()
+        """
         calulated_product_emb_sum_sq = torch.mul(calulated_product_emb, calulated_product_emb).sum(dim=1).view(
             calulated_product_emb.size(0), 1).repeat(1, product_embed.size(0))  # [N1 N2]
         product_embed_sum_sq = torch.mul(product_embed, product_embed).sum(dim=1).view(product_embed.size(0), 1).repeat(
@@ -120,6 +125,7 @@ def test(args, topk=10):
         print(multi_matrix.shape, calulated_product_emb_sum_sq.shape, product_embed_sum_sq.shape)
         scores_matrix = calulated_product_emb_sum_sq + product_embed_sum_sq.transpose(1, 0) - 2 * multi_matrix
         scores_matrix = -1 * scores_matrix.detach().numpy()
+        """
     else:
         # transE
         calulated_product_emb = user_embed + purchase_embed
@@ -216,9 +222,7 @@ def main():
     }
     """
     model_files = {
-        'Amazon_Beauty': args.dataset_dir + '/train_transe_model/embedding_des_epoch_30.ckpt',
-
-
+        'Amazon_Beauty': args.dataset_dir + '/train_transe_model/transe_model_sd_epoch_6_29.0.ckpt',
 
     }
     args.model_file = model_files[args.dataset]
